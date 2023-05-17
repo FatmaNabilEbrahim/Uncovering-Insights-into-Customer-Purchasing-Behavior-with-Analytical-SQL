@@ -1,0 +1,329 @@
+i want you to modify the r_score as it is related to the recency as if the recency is big the r_score is less 
+and the r_score is from 1 to 5 
+
+the fm_score the average from f_score and m_score deviding the data into 5 sections also 
+
+the customer_segment is :
+if the recency score is 5 and f_m_scores is 5 then Champions
+if the recency score is 5 and f_m_scores is 4 then Champions
+if the recency score is 4 and f_m_scores is 5 then Champions
+if the recency score is 5 and f_m_scores is 2 then Potential Loyalists 
+if the recency score is 4 and f_m_scores is 2 then Potential Loyalists
+if the recency score is 3 and f_m_scores is 3 then Potential Loyalists
+if the recency score is 4 and f_m_scores is 3 the Potential Loyalists 
+if the recency score is 5 and f_m_scores is 3 then Loyal Customers 
+if the recency score is 4 and f_m_scores is 4 then Loyal Customers 
+if the recency score is 3 and f_m_scores is 5 then Loyal Customers 
+if the recency score is 3 and f_m_scores is 4 then Loyal Customers 
+if the recency score is 5 and f_m_scores is 1 then Recent Customers 
+if the recency score is 4 and f_m_scores is 1 then Promising
+if the recency score is 3 and f_m_scores is 1 then Promising
+if the recency score is 3 and f_m_scores is 2 then Customers Needing Attention
+if the recency score is 2 and f_m_scores is 3 then Customers Needing Attention
+if the recency score is 2 and f_m_scores is 2 then Customers Needing Attention
+if the recency score is 2 and f_m_scores is 5 then At Risk
+if the recency score is 2 and f_m_scores is 4 then At Risk
+if the recency score is 1 and f_m_scores is 3 then At Risk
+if the recency score is 1 and f_m_scores is 5 then Cant Lose Them 
+if the recency score is 1 and f_m_scores is 4 then Cant Lose Them 
+if the recency score is 1 and f_m_scores is 2 then Hibernating
+if the recency score is 1 and f_m_scores is 1 then Lost
+
+
+and please stay with my table and coloums names:
+CREATE TABLE tableRetail 
+(
+    Invoice	VARCHAR(50),
+    StockCode	VARCHAR(50),
+    Quantity	INT,
+    InvoiceDate	VARCHAR(50),
+    Price	FLOAT,
+    Customer_ID	VARCHAR(50),
+    Country	VARCHAR(50)
+);
+
+
+and please do your modifications on this query if it is possible
+WITH rfm AS (
+  SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency
+  FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+  ) subquery
+)
+SELECT 
+  rfm.Customer_ID,
+  rfm.Monetary,
+  rfm.Frequency,
+  rfm.Recency,
+  AVG(rfm.Monetary) OVER () AS avg_monetary,
+  AVG(rfm.Frequency) OVER () AS avg_frequency,
+  NTILE(5) OVER (ORDER BY rfm.Recency) AS R,
+  NTILE(5) OVER (ORDER BY rfm.Frequency) AS F,
+  NTILE(5) OVER (ORDER BY rfm.Monetary) AS M,
+  CASE 
+    WHEN rfm.Recency >= 4 AND rfm.Frequency >= 4 AND rfm.Monetary >= 4 THEN 'Champions'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency >= 3 AND rfm.Monetary >= 3 THEN 'Loyal Customers'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 3 AND rfm.Monetary < 3 THEN 'Potential Loyalists'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 2 AND rfm.Monetary >= 2 THEN 'Recent Customers'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency < 2 AND rfm.Monetary < 2 THEN 'Promising'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 2 AND rfm.Monetary < 2 THEN 'Customers Needing Attention'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 3 AND rfm.Monetary < 3 THEN 'At Risk'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 4 AND rfm.Monetary >= 3 THEN 'Can’t Lose Them'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 1 AND rfm.Monetary < 1 THEN 'Hibernating'
+    ELSE 'Lost'
+  END AS rfm_segment
+FROM rfm
+order by recency desc
+
+
+
+
+
+WITH rfm AS (
+  SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency,
+    CASE 
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 365 THEN 1
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 180 THEN 2
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 90 THEN 3
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 60 THEN 4
+      ELSE 5
+    END AS r_score,
+    AVG(f_score + m_score) OVER() AS fm_score
+  FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency,
+        CASE 
+          WHEN SUM(Quantity * Price) > 5840.25 THEN 5
+          WHEN SUM(Quantity * Price) > 2937.5 THEN 4
+          WHEN SUM(Quantity * Price) > 1495 THEN 3
+          WHEN SUM(Quantity * Price) > 515 THEN 2
+          ELSE 1
+        END AS m_score,
+        CASE 
+          WHEN COUNT(DISTINCT Invoice) > 11 THEN 5
+          WHEN COUNT(DISTINCT Invoice) > 6 THEN 4
+          WHEN COUNT(DISTINCT Invoice) > 3 THEN 3
+          WHEN COUNT(DISTINCT Invoice) > 1 THEN 2
+          ELSE 1
+        END AS f_score
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+  ) subquery
+)
+SELECT 
+  rfm.Customer_ID,
+  rfm.Monetary,
+  rfm.Frequency,
+  rfm.Recency,
+  rfm.r_score,
+  CASE 
+    WHEN r_score = 5 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 4 THEN 'Champions'
+    WHEN r_score = 4 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 3 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 5 AND fm_score = 3 THEN 'Loyal Customers'
+    WHEN r_score = 4 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 5 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 5 AND fm_score = 1 THEN 'Recent Customers'
+    WHEN r_score = 4 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 3 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 5 THEN 'At Risk'
+    WHEN r_score = 2 AND fm_score = 4 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 3 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 5 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 4 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 2 THEN 'Hibernating'
+    WHEN r_score = 1 AND fm_score = 1 THEN 'Lost'
+    ELSE 'Unknown'
+  END AS customer_segment
+FROM rfm
+ORDER BY rfm.recency desc;
+
+
+
+
+
+
+
+
+WITH rfm AS (
+  SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency,
+    CASE 
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 365 THEN 1
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 180 THEN 2
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 90 THEN 3
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 60 THEN 4
+      ELSE 5
+    END AS r_score,
+    (FLOOR((Monetary+Frequency)/2)) AS fm_score
+  FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+  ) subquery
+)
+SELECT 
+  rfm.Customer_ID,
+  rfm.Monetary,
+  rfm.Frequency,
+  rfm.Recency,
+  rfm.r_score,
+  rfm.fm_score,
+  CASE 
+    WHEN r_score = 5 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 4 THEN 'Champions'
+    WHEN r_score = 4 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 3 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 5 AND fm_score = 3 THEN 'Loyal Customers'
+    WHEN r_score = 4 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 5 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 5 AND fm_score = 1 THEN 'Recent Customers'
+    WHEN r_score = 4 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 3 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 5 THEN 'At Risk'
+    WHEN r_score = 2 AND fm_score = 4 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 3 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 5 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 4 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 2 THEN 'Hibernating'
+    WHEN r_score = 1 AND fm_score = 1 THEN 'Lost'
+    ELSE 'Unknown'
+  END AS customer_segment
+FROM rfm
+ORDER BY rfm.recency desc;

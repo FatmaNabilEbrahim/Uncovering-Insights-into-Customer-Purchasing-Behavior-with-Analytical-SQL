@@ -1,0 +1,685 @@
+***max total sales and max total qantity and they are not the same product
+
+
+**********Total sales by country: This query will group the data by country and calculate the total sales for each country.
+
+SELECT Country, SUM(Quantity * Price) AS TotalSales
+FROM tableRetail
+GROUP BY Country;
+
+
+***********Most popular items:
+
+SELECT distinct  StockCode, SUM(Quantity) OVER (PARTITION BY StockCode) AS TotalQuantity
+FROM tableRetail
+ORDER BY TotalQuantity DESC;
+
+
+
+***********Sales by month
+
+SELECT TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY HH24:MI'), 'MM/YYYY') AS Month, SUM(Quantity * Price) AS TotalSales
+FROM tableRetail
+GROUP BY TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY HH24:MI'), 'MM/YYYY')
+ORDER BY TO_DATE(Month, 'MM/YYYY') ASC;
+
+or:
+
+SELECT TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY HH24:MI'), 'MM/YYYY') AS Month, SUM(Quantity * Price) AS TotalSales
+FROM tableRetail
+GROUP BY TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY HH24:MI'), 'MM/YYYY')
+ORDER BY TO_DATE('01-' || Month, 'DD-MM-YYYY') ASC;
+
+
+
+*******percentage of profit for each product compared to the total profit:
+
+SELECT 
+    StockCode, 
+    ROUND(SUM(Quantity * Price) / (SELECT SUM(Quantity * Price) FROM tableRetail) * 100, 2) AS ProfitPercentage 
+FROM tableRetail 
+GROUP BY StockCode;
+
+
+
+SELECT 
+    StockCode, 
+    ROUND(SUM(Quantity * Price) / SUM(SUM(Quantity * Price)) OVER () * 100, 2) AS ProfitPercentage 
+FROM tableRetail 
+GROUP BY StockCode;
+
+
+********each customer profit
+
+SELECT 
+    Customer_ID, 
+    SUM(Quantity * Price) AS Profit 
+FROM tableRetail 
+GROUP BY Customer_ID;
+
+
+*********top 10 customers in terms of total profit
+
+SELECT 
+    c.Customer_ID, 
+    ROUND((SUM(r.Quantity * r.Price))::numeric, 2) AS Profit 
+FROM 
+    tableRetail r 
+    INNER JOIN (
+        SELECT 
+            Customer_ID, 
+            SUM(Quantity * Price) AS TotalProfit 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        ORDER BY 
+            TotalProfit DESC 
+        FETCH FIRST 10 ROWS ONLY -- get only top 10 customers
+    ) c ON r.Customer_ID = c.Customer_ID 
+GROUP BY 
+    c.Customer_ID 
+ORDER BY 
+    Profit DESC;
+
+
+or:
+
+
+SELECT 
+    c.Customer_ID, 
+    ROUND((SUM(r.Quantity * r.Price))::numeric, 2) AS Profit,
+    ROUND((SUM(r.Quantity * r.Price) / t.TotalProfit)::numeric * 100, 2) AS PercentTotalProfit
+FROM 
+    tableRetail r 
+    INNER JOIN (
+        SELECT 
+            Customer_ID, 
+            SUM(Quantity * Price) AS TotalProfit 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+    ) t ON 1=1 -- cartesian product to calculate total profit for all customers
+    INNER JOIN (
+        SELECT 
+            Customer_ID, 
+            SUM(Quantity * Price) AS TotalProfit 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        ORDER BY 
+            TotalProfit DESC 
+        FETCH FIRST 10 ROWS ONLY -- get only top 10 customers
+    ) c ON r.Customer_ID = c.Customer_ID 
+GROUP BY 
+    c.Customer_ID, t.TotalProfit 
+ORDER BY 
+    Profit DESC;
+	
+	
+	
+	SELECT 
+    c.Customer_ID, 
+    ROUND((SUM(r.Quantity * r.Price))::numeric, 2) AS Profit,
+    ROUND((SUM(r.Quantity * r.Price) / t.TotalProfit)::numeric * 100, 2) AS PercentTotalProfit,
+    ROUND((SUM(r.Quantity * r.Price) / c.Top10Profit)::numeric * 100, 2) AS PercentTop10Profit,
+    DENSE_RANK() OVER (ORDER BY SUM(r.Quantity * r.Price) DESC) AS Rank
+FROM 
+    tableRetail r 
+    INNER JOIN (
+        SELECT 
+            Customer_ID, 
+            SUM(Quantity * Price) AS TotalProfit 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+    ) t ON 1=1 -- cartesian product to calculate total profit for all customers
+    INNER JOIN (
+        SELECT 
+            Customer_ID, 
+            SUM(Quantity * Price) AS Top10Profit 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        HAVING 
+            SUM(Quantity * Price) >= (
+                SELECT 
+                    MIN(TotalProfit) 
+                FROM (
+                    SELECT 
+                        Customer_ID, 
+                        SUM(Quantity * Price) AS TotalProfit 
+                    FROM 
+                        tableRetail 
+                    GROUP BY 
+                        Customer_ID 
+                    ORDER BY 
+                        TotalProfit DESC 
+                    FETCH FIRST 10 ROWS ONLY
+                ) t
+            )
+    ) c ON r.Customer_ID = c.Customer_ID 
+GROUP BY 
+    c.Customer_ID, t.TotalProfit, c.Top10Profit 
+ORDER BY 
+    Profit DESC;
+
+
+
+
+
+
+
+SELECT 
+    Customer_ID, 
+    TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY'), 'YYYY') AS InvoiceYear, 
+    ROUND((SUM(Quantity * Price))::numeric, 2) AS Profit, 
+    ROUND((SUM(Quantity * Price) / SUM(SUM(Quantity * Price)) 
+		   OVER (PARTITION BY TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY'), 'YYYY')
+				 ORDER BY SUM(Quantity * Price) DESC))::numeric * 100, 2) AS PercentTotalProfit, 
+    RANK() OVER (PARTITION BY TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY'), 'YYYY') ORDER BY SUM(Quantity * Price) DESC) AS Rank 
+FROM 
+    tableRetail 
+WHERE 
+    Customer_ID IN (
+        SELECT 
+            Customer_ID 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        ORDER BY 
+            SUM(Quantity * Price) DESC 
+        FETCH FIRST 10 ROWS ONLY
+    ) 
+GROUP BY 
+    Customer_ID, 
+    TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY'), 'YYYY') 
+ORDER BY 
+    TO_CHAR(TO_DATE(InvoiceDate, 'MM/DD/YYYY'), 'YYYY'), 
+    Rank;
+	
+	
+	
+ ********the percentage of total profit for each customer and year, and ranks the top 10 customers by profit for each year.
+ 	
+
+	
+SELECT 
+    Customer_ID, 
+    EXTRACT(YEAR FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS InvoiceYear,
+    ROUND((SUM(Quantity * Price))::numeric, 2) AS Profit,
+    ROUND((SUM(Quantity * Price) / SUM(SUM(Quantity * Price)) OVER (PARTITION BY Customer_ID ORDER BY SUM(Quantity * Price) DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING))::numeric * 100, 2) AS PercentTotalProfit,
+    RANK() OVER (PARTITION BY EXTRACT(YEAR FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) ORDER BY SUM(Quantity * Price) DESC) AS Rank
+FROM 
+    tableRetail 
+WHERE 
+    Customer_ID IN (
+        SELECT 
+            Customer_ID 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        ORDER BY 
+            SUM(Quantity * Price) DESC 
+        FETCH FIRST 10 ROWS ONLY
+    ) 
+GROUP BY 
+    Customer_ID, EXTRACT(YEAR FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    InvoiceYear, Rank;
+
+
+
+
+querire :
+
+1- Find the top 10 customers in terms of total purchase amount
+
+SELECT Customer_ID, SUM(Quantity * Price) AS TotalPurchaseAmount
+FROM tableRetail
+GROUP BY Customer_ID
+ORDER BY TotalPurchaseAmount DESC
+LIMIT 10;
+
+
+2-- Calculate the monthly revenue for each country
+
+SELECT Country, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS InvoiceMonth, SUM(Quantity * Price) AS MonthlyRevenue
+FROM tableRetail
+GROUP BY Country, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY Country, InvoiceMonth;
+
+This query helps the business understand the revenue generated from each country.
+ The business can use this information to identify potential markets for expansion and plan promotions accordingly.
+
+by identifying the data the store doesn't have any branches in any other country 
+so that may help them in expansion plan 
+
+
+3--Find the top 5 products in terms of total revenue generated
+
+SELECT 
+    StockCode, 
+    ROUND((SUM(Quantity * Price))::numeric, 2) AS Revenue
+FROM 
+    tableRetail 
+GROUP BY 
+    StockCode 
+ORDER BY 
+    Revenue DESC 
+FETCH FIRST 10 ROWS ONLY;
+
+
+
+4-- Calculate the average purchase value for each customer
+SELECT Customer_ID, AVG(Quantity * Price) AS AvgPurchaseValue
+FROM tableRetail
+GROUP BY Customer_ID
+ORDER BY AvgPurchaseValue DESC;
+
+5--- Find the total revenue by month for the year 2011.
+SELECT 
+    EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS InvoiceMonth,
+    ROUND((SUM(Quantity * Price))::numeric, 2) AS Revenue
+FROM 
+    tableRetail 
+WHERE 
+    EXTRACT(YEAR FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) = 2011
+GROUP BY 
+    EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    InvoiceMonth;
+
+This query helps track the revenue trends for each month in the year 2011. 
+This information can be used to identify the seasonality of the business and plan promotions and inventory accordingly.
+
+
+6---Find the top 10 customers with the highest average order value.
+
+SELECT 
+    Customer_ID, 
+    ROUND(AVG(Quantity * Price)::numeric, 2) AS AverageOrderValue
+FROM 
+    tableRetail 
+GROUP BY 
+    Customer_ID 
+ORDER BY 
+    AverageOrderValue DESC 
+FETCH FIRST 10 ROWS ONLY;
+
+
+This query helps identify the top 10 customers with the highest average order value.
+ The business can use this information to create personalized promotions and offers for these customers to increase their loyalty.
+ 
+ 
+ 
+ 
+7--- Find the monthly revenue trend for the top 5 customers.
+SELECT 
+    Customer_ID, 
+    EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS InvoiceMonth,
+    ROUND((SUM(Quantity * Price))::numeric, 2) AS Revenue
+FROM 
+    tableRetail 
+WHERE 
+    Customer_ID IN (
+        SELECT 
+            Customer_ID 
+        FROM 
+            tableRetail 
+        GROUP BY 
+            Customer_ID 
+        ORDER BY 
+            SUM(Quantity * Price) DESC 
+        FETCH FIRST 5 ROWS ONLY
+    ) 
+GROUP BY 
+    Customer_ID, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    Customer_ID, InvoiceMonth;
+
+This query helps identify the monthly revenue trend for the top 5 customers. 
+The business can use this information to plan personalized promotions and offers for these customers to increase their loyalty and engagement.
+
+8---Find the monthly revenue growth rate for each country:
+SELECT 
+    Country, 
+    EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS Month,
+    SUM(Quantity * Price) AS MonthlyRevenue,
+    (SUM(Quantity * Price) / LAG(SUM(Quantity * Price)) OVER (PARTITION BY Country ORDER BY EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')))) - 1 AS MonthlyRevenueGrowthRate
+FROM 
+    tableRetail
+GROUP BY 
+    Country, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    Country, Month;
+This query calculates the monthly revenue growth rate for each country. 
+It compares the revenue earned in the current month to the revenue earned in the previous month and calculates the percentage change. This provides a measure of how much the revenue has grown or declined month over month for each country.
+
+Business Meaning: By calculating the monthly revenue growth rate for each country,
+ the business can track the revenue performance of each country over time. This can provide insights into which countries are experiencing growth or decline in revenue, which can inform strategic decision-making around resource allocation, marketing campaigns, and sales initiatives.
+ 
+ 
+ 
+ 
+ 9----------Calculate the cumulative revenue for each customer over time:
+
+ SELECT 
+    Customer_ID, 
+    DATE_PART('year', TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS Year,
+    DATE_PART('month', TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS Month,
+    SUM(Quantity * Price) AS CumulativeRevenue,
+    SUM(SUM(Quantity * Price)) OVER (PARTITION BY Customer_ID ORDER BY DATE_PART('year', TO_DATE(InvoiceDate, 'MM/DD/YYYY')), DATE_PART('month', TO_DATE(InvoiceDate, 'MM/DD/YYYY'))) AS TotalRevenue
+FROM 
+    tableRetail
+GROUP BY 
+    Customer_ID, DATE_PART('year', TO_DATE(InvoiceDate, 'MM/DD/YYYY')), DATE_PART('month', TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    Customer_ID, Year, Month;
+
+
+
+
+10-----Calculate the average revenue per customer per month for each country:
+
+SELECT 
+    Country, 
+    EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS Month,
+    AVG(SUM(Quantity * Price)) OVER (PARTITION BY Country, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))) AS AvgRevenuePerCustomer
+FROM 
+    tableRetail
+GROUP BY 
+    Country, EXTRACT(MONTH FROM TO_DATE(InvoiceDate, 'MM/DD/YYYY'))
+ORDER BY 
+    Country, Month;
+	
+This query aims to provide insights into the average revenue generated by customers in each country on a monthly basis.
+ By grouping the data by country and the month of the purchase, the query calculates the average revenue per customer in
+ that country for that month. This can help businesses understand how much revenue each customer is generating on average
+ and identify trends in revenue generation across different countries and over time. The output of this query can be used to
+ create visualizations and reports to help businesses make informed decisions about their marketing and sales strategies, 
+ and to identify opportunities for growth and optimization.
+
+
+
+
+Q2:
+
+
+SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Frequency,
+    Monetary,
+    CASE 
+        WHEN last_purchase_date IS NULL THEN NULL 
+        ELSE CAST(CURRENT_DATE - last_purchase_date AS INTEGER)
+    END AS Recency,
+    NTILE(5) OVER (ORDER BY Monetary DESC) AS fm_score,
+    NTILE(5) OVER (ORDER BY Frequency DESC) AS f_score,
+    NTILE(5) OVER (ORDER BY Monetary DESC, Frequency DESC) AS fm_score2,
+    CASE
+        WHEN last_purchase_date IS NULL THEN NULL
+        WHEN CURRENT_DATE - last_purchase_date <= 30 THEN 'Recent Customers'
+        WHEN Frequency >= 10 AND Monetary >= 1000 THEN 'Champions'
+        WHEN Frequency >= 5 AND Monetary >= 500 THEN 'Loyal Customers'
+        WHEN Frequency >= 3 AND Monetary >= 100 THEN 'Potential Loyalists'
+        WHEN Frequency >= 1 AND Monetary >= 20 THEN 'Promising'
+        WHEN Frequency = 1 THEN 'Customers Needing Attention'
+        WHEN Frequency = 2 THEN 'At Risk'
+        WHEN CURRENT_DATE - last_purchase_date > 365 THEN 'Hibernating'
+        ELSE 'Lost'
+    END AS cust_segment
+FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        COUNT(DISTINCT Invoice) AS Frequency, 
+        SUM(Quantity * Price) AS Monetary
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+) subquery
+ORDER BY 
+    Monetary DESC, 
+    Frequency DESC, 
+    last_purchase_date DESC;
+
+
+
+without champions and this coloum:
+
+SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Frequency,
+    Monetary,
+    NTILE(5) OVER (ORDER BY last_purchase_date_diff DESC) AS r_score,
+    NTILE(5) OVER (ORDER BY Monetary DESC) AS fm_score
+FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        COUNT(DISTINCT Invoice) AS Frequency, 
+        SUM(Quantity * Price) AS Monetary,
+        EXTRACT(DAY FROM CURRENT_DATE) - EXTRACT(DAY FROM MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY'))) AS last_purchase_date_diff
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+) subquery
+
+
+
+
+3--- 
+SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency,
+    NTILE(5) OVER (ORDER BY (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date) AS r_score,
+    NTILE(5) OVER (ORDER BY Monetary DESC) AS fm_score
+FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+) subquery;
+
+
+
+-- select * from tableRetail where customer_id='12748'
+
+
+
+-- the final answer :
+
+WITH rfm AS (
+  SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency
+  FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+  ) subquery
+)
+SELECT 
+  rfm.Customer_ID,
+  rfm.Monetary,
+  rfm.Frequency,
+  rfm.Recency,
+  AVG(rfm.Monetary) OVER () AS avg_monetary,
+  AVG(rfm.Frequency) OVER () AS avg_frequency,
+  NTILE(5) OVER (ORDER BY rfm.Recency) AS R,
+  NTILE(5) OVER (ORDER BY rfm.Frequency) AS F,
+  NTILE(5) OVER (ORDER BY rfm.Monetary) AS M,
+  CASE 
+    WHEN rfm.Recency >= 4 AND rfm.Frequency >= 4 AND rfm.Monetary >= 4 THEN 'Champions'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency >= 3 AND rfm.Monetary >= 3 THEN 'Loyal Customers'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 3 AND rfm.Monetary < 3 THEN 'Potential Loyalists'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 2 AND rfm.Monetary >= 2 THEN 'Recent Customers'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency < 2 AND rfm.Monetary < 2 THEN 'Promising'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 2 AND rfm.Monetary < 2 THEN 'Customers Needing Attention'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 3 AND rfm.Monetary < 3 THEN 'At Risk'
+    WHEN rfm.Recency <= 2 AND rfm.Frequency >= 4 AND rfm.Monetary >= 3 THEN 'Can’t Lose Them'
+    WHEN rfm.Recency >= 3 AND rfm.Frequency < 1 AND rfm.Monetary < 1 THEN 'Hibernating'
+    ELSE 'Lost'
+  END AS rfm_segment
+FROM rfm
+order by recency desc
+
+
+
+
+
+WITH rfm AS (
+  SELECT 
+    Customer_ID,
+    last_purchase_date,
+    Monetary,
+    Frequency,
+    (SELECT MAX(last_purchase_date) FROM (
+        SELECT 
+            Customer_ID,
+            MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+        FROM 
+            tableRetail
+        GROUP BY 
+            Customer_ID
+    ) subquery) - last_purchase_date AS Recency,
+    CASE 
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 365 THEN 1
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 180 THEN 2
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 90 THEN 3
+      WHEN (SELECT MAX(last_purchase_date) FROM (
+          SELECT 
+              Customer_ID,
+              MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date
+          FROM 
+              tableRetail
+          GROUP BY 
+              Customer_ID
+      ) subquery) - last_purchase_date > 60 THEN 4
+      ELSE 5
+    END AS r_score,
+    (FLOOR((Monetary+Frequency)/2)) AS fm_score
+  FROM (
+    SELECT 
+        Customer_ID, 
+        MAX(TO_DATE(InvoiceDate, 'MM/DD/YYYY')) AS last_purchase_date, 
+        SUM(Quantity * Price) AS Monetary,
+        COUNT(DISTINCT Invoice) AS Frequency
+    FROM 
+        tableRetail
+    GROUP BY 
+        Customer_ID
+  ) subquery
+)
+SELECT 
+  rfm.Customer_ID,
+  rfm.Monetary,
+  rfm.Frequency,
+  rfm.Recency,
+  rfm.r_score,
+  rfm.fm_score,
+  CASE 
+    WHEN r_score = 5 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 4 THEN 'Champions'
+    WHEN r_score = 4 AND fm_score = 5 THEN 'Champions'
+    WHEN r_score = 5 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 2 THEN 'Potential Loyalists'
+    WHEN r_score = 3 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 4 AND fm_score = 3 THEN 'Potential Loyalists'
+    WHEN r_score = 5 AND fm_score = 3 THEN 'Loyal Customers'
+    WHEN r_score = 4 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 5 THEN 'Loyal Customers'
+    WHEN r_score = 3 AND fm_score = 4 THEN 'Loyal Customers'
+    WHEN r_score = 5 AND fm_score = 1 THEN 'Recent Customers'
+    WHEN r_score = 4 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 1 THEN 'Promising'
+    WHEN r_score = 3 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 3 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 2 THEN 'Customers Needing Attention'
+    WHEN r_score = 2 AND fm_score = 5 THEN 'At Risk'
+    WHEN r_score = 2 AND fm_score = 4 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 3 THEN 'At Risk'
+    WHEN r_score = 1 AND fm_score = 5 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 4 THEN 'Can’t Lose Them'
+    WHEN r_score = 1 AND fm_score = 2 THEN 'Hibernating'
+    WHEN r_score = 1 AND fm_score = 1 THEN 'Lost'
+    ELSE 'Unknown'
+  END AS customer_segment
+FROM rfm
+ORDER BY rfm.recency desc;
